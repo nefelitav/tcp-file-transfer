@@ -20,6 +20,8 @@ typedef struct fileNode fileNode;
 
 struct fileNode {
     char* file;
+    char* directory;
+    int socket;
     fileNode *next;
 };
 
@@ -29,14 +31,18 @@ struct fileQueue {
     fileNode *first;
     fileNode *last;
     unsigned int currSize;
+    unsigned int maxSize;
 };
 
-void createFileQueue();
+void createFileQueue(unsigned int maxSize);
 void deleteFileQueue();
 bool isEmpty();
-void push(char* newfile);
+bool isFull();
+bool push(char* newfile, char* fileDir);
 fileNode *pop();
 void printQueue();
+
+extern fileQueue* queue;
 
 
 #endif

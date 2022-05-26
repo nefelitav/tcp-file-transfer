@@ -9,6 +9,8 @@
 #include "../include/utilities.h"
 #include "../include/server.h"
 
+fileQueue* queue;
+
 void perror_exit(char *message) {
     perror(message);
     exit(EXIT_FAILURE);
@@ -34,33 +36,48 @@ void sigchld_handler (int sig) {
 // FileQueue    
 /////////////////////////////////
 
-void createFileQueue() {
+void createFileQueue(unsigned int maxSize) {
     queue = malloc(sizeof(fileQueue));
     queue->first = NULL;
     queue->last = NULL;
     queue->currSize = 0;
+    queue->maxSize = maxSize;
 }
 
 bool isEmpty() {
     return (queue->currSize == 0);
 }
 
-void push(char* newfile) {
+bool isFull() {
+    return (queue->currSize == queue->maxSize);
+}
+
+bool push(char* newfile, char* fileDir, int socket) {
+    if (isFull()) {
+        return false;
+    }
     if (queue->last == NULL) {
         // empty queue
         queue->last = (fileNode*)malloc(sizeof(fileNode));
         queue->last->file = malloc(sizeof(char) * strlen(newfile) + 1);
+        queue->last->directory = malloc(sizeof(char) * strlen(fileDir) + 1);
         strcpy(queue->last->file, newfile);
+        strcpy(queue->last->directory, fileDir);
+        queue->last->socket = socket;
         queue->last->next = NULL;
         queue->first = queue->last;
     } else {
         queue->last->next = (fileNode*)malloc(sizeof(fileNode));
         queue->last = queue->last->next;
         queue->last->file = malloc(sizeof(char) * strlen(newfile) + 1);
+        queue->last->directory = malloc(sizeof(char) * strlen(fileDir) + 1);
         strcpy(queue->last->file, newfile);
+        strcpy(queue->last->directory, fileDir);
+        queue->last->socket = socket;
         queue->last->next = NULL;
     }
     queue->currSize++;
+    return true;
 }
 
 fileNode *pop() {
@@ -80,7 +97,7 @@ void printQueue() {
     fileNode *curr = queue->first;
     printf("\n############################################\n");
     while (curr != NULL) {
-        printf("file = %s\n", curr->file);
+        printf("file = %s/%s in socket %d\n", curr->directory, curr->file, curr->socket);
         curr = curr->next;
     }
     printf("############################################\n");

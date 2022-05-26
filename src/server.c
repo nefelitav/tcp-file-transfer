@@ -13,16 +13,21 @@
 #include <pthread.h>
 #include "../include/utilities.h"
 #include "../include/client.h"
+#include "../include/server.h"
 
-fileQueue* queue;
 pthread_t* worker_threads;
+pthread_mutex_t queueLock = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t queueFullCond = PTHREAD_COND_INITIALIZER;
+pthread_cond_t queueEmptyCond = PTHREAD_COND_INITIALIZER;
 
 int main(int argc, char **argv) {
     int port, sock, newsock, thread_pool_size, queue_size, block_size;
     struct sockaddr_in server, client;
     struct sockaddr * serverptr = (struct sockaddr *)&server;
-    struct sockaddr *clientptr= (struct sockaddr *)&client;
+    struct sockaddr *clientptr = (struct sockaddr *)&client;
+    clientptr = NULL;
     socklen_t clientlen;
+
 
     if (argc < 5) {
     	printf("Please give port, thread pool size, queue size and block size\n");
@@ -36,7 +41,6 @@ int main(int argc, char **argv) {
 
         if (strcmp(argv[i], "-s") == 0) {
             thread_pool_size = atoi(argv[i+1]);
-            // worker_threads = new pthread_t[thread_pool_size];
         }
 
         if (strcmp(argv[i], "-q") == 0) {
@@ -55,77 +59,147 @@ int main(int argc, char **argv) {
     printf("block_size: %d\n", block_size);
     printf("Server was successfully initialized...\n");
 
+    createFileQueue(queue_size);
+    worker_threads = malloc(sizeof(pthread_t) * thread_pool_size);
+
+    for (int i = 0; i < thread_pool_size; i++) {
+        pthread_create(&worker_threads[i], NULL, &worker_job, NULL);
+    }
+
     if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
         perror_exit("socket");
     }
+
     server.sin_family = AF_INET; 
     server.sin_addr.s_addr = htonl(INADDR_ANY);
     server.sin_port = htons(port);
+
     if (bind(sock, serverptr, sizeof(server)) < 0) {
         perror_exit("bind") ;
     }
-    if (listen(sock, 5) < 0) {
-        perror_exit ("listen");
+
+    if (listen(sock, 10) < 0) {
+        perror_exit("listen");
     }
+
     printf("Listening for connections on port %d\n" , port);
-    int i = 0;
     while (1) {
+
         if ((newsock = accept(sock, clientptr, &clientlen)) < 0) {
             perror_exit("accept");
         }
+
     	printf("Accepted connection\n");
 
-        pthread_t* communication_thread;
-        pthread_create(&communication_thread, NULL, &read_directory, NULL);
-
-        // pthread_create(&worker_threads[i], NULL, &execute_all_jobs, NULL);
-
+        pthread_t communication_thread;
+        read_dir_args_struct *args = malloc(sizeof(read_dir_args_struct));
+        args->socket = newsock;
+        args->address = clientptr;
+        args->address_len = &clientlen;
+        pthread_create(&communication_thread, NULL, &read_directory, (void*)args);
+        pthread_join(communication_thread, NULL);
+        free(args);
         close(newsock); 
-        i++;
-    // }
 
+
+
+    }
+    deleteFileQueue();
+    free(worker_threads);
 }
 
 
 void* read_directory(void *arg) {
-    // recvfrom(int socket, void * buff, size_t length, int flags, struct sockaddr * address, socklen_t * address_len);
-    // printf("About to scan directory %s\n", )
-    // int status;
-    // char *args[2];
+    char buff[256];
+    memset(buff, 0, 256);
+    read_dir_args_struct* args = (read_dir_args_struct*)arg;
+    int n;
+    if ((n = recvfrom(args->socket, buff, sizeof(buff), 0, args->address, args->address_len) < 0)) {
+        perror_exit("recvfrom");
+    }
+    printf("[Thread: %d] : About to scan directory %s\n", pthread_self(), buff);
 
-    // args[0] = "/bin/ls";        // first arg is the full path to the executable
-    // args[1] = NULL;             // list of args must be NULL terminated
-
-    // if ( fork() == 0 )
-    //     execv( args[0], args ); // child: call execv with the path and the args
-    // else
-    //     wait( &status );        // parent: wait for the child (not really necessary)
-
-
-    // queue.push();
-
+    // create pipe
+    int p[2];
+    if (pipe(p) < 0) {
+        perror("Failed to open pipe\n");
+        exit(1);
+    }
+    pid_t pid;
+    if ((pid = fork()) == -1) {
+        perror("Failed to fork\n");
+        exit(1);
+    }
+    if (pid == 0) {
+        close(p[0]);
+        // set pipe to stdout
+        dup2(p[1], 1); 
+        close(p[1]);
+        if (execl("/bin/ls", "ls", "-R", buff, (char *)0) == -1) { 
+            perror("Execl Failed\n");
+            exit(1);
+        }
+    } else {
+        close(p[1]);
+        char inbuf[256];
+        memset(inbuf, 0, 256);
+        char* files = malloc(sizeof(char) * 1000 + 1);
+        memset(files, 0, 1000 + 1);
+        int nbytes;
+        while (1) {
+            nbytes = read(p[0], inbuf, 256);
+            if (nbytes == 0) {
+                break;
+            }
+            files = (char *)realloc(files, strlen(files) + 256 + 1);
+            strncat(files, inbuf, 256);
+            memset(inbuf, 0, 256);
+        }
+        // printf("%s\n", files);
+        char *line, *temp;
+        char* dir;
+        dir = malloc(sizeof(char) * strlen(files) + 1);
+        line = strtok_r(files, "\n", &temp);
+        do {
+            printf("current line = %s\n", line);
+            if (strchr(line, ':') != NULL) {
+                strcpy(dir, line);
+            } else {
+                pthread_mutex_lock(&queueLock);
+                if (push(line, dir, args->socket) == false) {
+                    printf("[Thread: %d] : Adding file %s/%s to the queue...\n", dir, line);
+                    pthread_cond_signal(&queueEmptyCond);
+                    pthread_cond_wait(&queueFullCond, &queueLock);
+                    pthread_mutex_unlock(&queueLock);
+                }
+            }
+        } while ((line = strtok_r(NULL, "\n", &temp)) != NULL);
+        free(files);
+    }
+    return NULL;
 }
 
-// void *execute_all_jobs(void *arg)
-// {
-//     jobNode *job = NULL;
-//     while (1)
-//     {
-//         pthread_mutex_lock(&queueLock);
-//         while (scheduler->getQueue()->isEmpty()) // Wait while JobQueue is empty
-//         {
-//             if (globalExit) // If program exited while this thread was waiting, exit
-//             {
-//                 pthread_mutex_unlock(&queueLock);
-//                 return NULL;
-//             }
-//             pthread_cond_wait(&queueEmptyCond, &queueLock); // wait until queue is no more empty to pop
-//         }
-//         job = scheduler->getQueue()->pop(); // Execute Job
-//         pthread_mutex_unlock(&queueLock);
-//         job->getJob()->getFunc()(job->getJob()->getArgs());
+void *worker_job(void *arg) {
+    fileNode *fn = NULL;
+    while (1) {
+        pthread_mutex_lock(&queueLock);
+        while (isEmpty()) {
+            if (globalExit) {
+                pthread_mutex_unlock(&queueLock);
+                return NULL;
+            }
+            pthread_cond_wait(&queueEmptyCond, &queueLock); 
+        }
+        fileNode* fn = pop(); 
+        printf("[Thread: %d]: Received task: <%s/%s, %d>\n", pthread_self(), fn->directory, fn->file, fn->socket);
+        printf("[Thread: %d]: About to read file %s/%s\n", fn->directory, fn->file);
+        // file content
 
-//         delete job;
-//     }
-//     return NULL;
-// }
+        // int stat(char *path, struct stat *buf);
+
+        pthread_cond_signal(&queueFullCond);
+        pthread_mutex_unlock(&queueLock);
+        free(fn);
+    }
+    return NULL;
+}
