@@ -15,6 +15,8 @@
 
 void* read_directory(void *arg);
 void *worker_job(void *arg);
+int isDirectory(const char *path);
+
 typedef struct {
     int socket;
     struct sockaddr * address;

@@ -63,7 +63,7 @@ int main(int argc, char **argv) {
     worker_threads = malloc(sizeof(pthread_t) * thread_pool_size);
 
     for (int i = 0; i < thread_pool_size; i++) {
-        pthread_create(&worker_threads[i], NULL, &worker_job, NULL);
+        pthread_create(&worker_threads[i], NULL, &worker_job, (void*)&block_size);
     }
 
     if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
@@ -89,7 +89,7 @@ int main(int argc, char **argv) {
             perror_exit("accept");
         }
 
-    	printf("Accepted connection\n");
+    	printf("Accepted connection\n\n");
 
         pthread_t communication_thread;
         read_dir_args_struct *args = malloc(sizeof(read_dir_args_struct));
@@ -100,11 +100,11 @@ int main(int argc, char **argv) {
         pthread_join(communication_thread, NULL);
         free(args);
         close(newsock); 
-
-
-
     }
     deleteFileQueue();
+    for (int i = 0; i < thread_pool_size; i++) {
+        pthread_join(worker_threads[i], NULL);
+    }
     free(worker_threads);
 }
 
@@ -117,7 +117,7 @@ void* read_directory(void *arg) {
     if ((n = recvfrom(args->socket, buff, sizeof(buff), 0, args->address, args->address_len) < 0)) {
         perror_exit("recvfrom");
     }
-    printf("[Thread: %d] : About to scan directory %s\n", pthread_self(), buff);
+    printf("[Thread: %ld] : About to scan directory %s\n", pthread_self(), buff);
 
     // create pipe
     int p[2];
@@ -135,7 +135,7 @@ void* read_directory(void *arg) {
         // set pipe to stdout
         dup2(p[1], 1); 
         close(p[1]);
-        if (execl("/bin/ls", "ls", "-R", buff, (char *)0) == -1) { 
+        if (execl("/bin/ls", "ls", "-Ra", buff, (char *)0) == -1) { 
             perror("Execl Failed\n");
             exit(1);
         }
@@ -161,17 +161,23 @@ void* read_directory(void *arg) {
         dir = malloc(sizeof(char) * strlen(files) + 1);
         line = strtok_r(files, "\n", &temp);
         do {
-            printf("current line = %s\n", line);
+            // printf("current line = %s\n", line);
             if (strchr(line, ':') != NULL) {
+                line[strlen(line)-1] = '\0';
                 strcpy(dir, line);
+                // printf("Directory = %s\n", dir);
             } else {
+                if (isDirectory(line)) {
+                    continue;
+                }
                 pthread_mutex_lock(&queueLock);
                 if (push(line, dir, args->socket) == false) {
-                    printf("[Thread: %d] : Adding file %s/%s to the queue...\n", dir, line);
-                    pthread_cond_signal(&queueEmptyCond);
                     pthread_cond_wait(&queueFullCond, &queueLock);
-                    pthread_mutex_unlock(&queueLock);
+                } else {
+                    printf("[Thread: %ld] : Adding file %s to the queue...\n",  pthread_self(),  line);
+                    pthread_cond_signal(&queueEmptyCond);
                 }
+                pthread_mutex_unlock(&queueLock);
             }
         } while ((line = strtok_r(NULL, "\n", &temp)) != NULL);
         free(files);
@@ -184,22 +190,61 @@ void *worker_job(void *arg) {
     while (1) {
         pthread_mutex_lock(&queueLock);
         while (isEmpty()) {
-            if (globalExit) {
-                pthread_mutex_unlock(&queueLock);
-                return NULL;
-            }
+            // if (globalExit) {
+            //     pthread_mutex_unlock(&queueLock);
+            //     return NULL;
+            // }
+            printf("Waiting\n");
             pthread_cond_wait(&queueEmptyCond, &queueLock); 
         }
+        printf("Done Waiting\n");
+
         fileNode* fn = pop(); 
-        printf("[Thread: %d]: Received task: <%s/%s, %d>\n", pthread_self(), fn->directory, fn->file, fn->socket);
-        printf("[Thread: %d]: About to read file %s/%s\n", fn->directory, fn->file);
+        printf("[Thread: %ld]: Received task: <%s/%s, %d>\n", pthread_self(), fn->directory, fn->file, fn->socket);
+        printf("[Thread: %ld]: About to read file %s/%s\n", pthread_self(), fn->directory, fn->file);
+        
         // file content
+        char* filepath = malloc(strlen(fn->directory) + strlen(fn->file) + 2);
+        memset(filepath, 0, strlen(fn->directory) + strlen(fn->file) + 3);
+        strcat(filepath, fn->directory);
+        strcat(filepath, "/");
+        strcat(filepath, fn->file);
+        int readFile;
+        if ((readFile = open(filepath, O_RDONLY)) == -1) {
+            perror("Failed to open file\n");
+            exit(1);
+        }
+
+        int block_size = *(int*)arg;
+
+        char block[block_size];
+        memset(block, 0, block_size);
+        // int nbytes;
+        // while (1) {
+        //     nbytes = read(readFile, block, block_size);
+        //     if (nbytes == 0) {
+        //         break;
+        //     }
+        //     memset(block, 0, 256);
+        // }
 
         // int stat(char *path, struct stat *buf);
 
+        if (close(readFile) == -1) {  
+            perror("Failed to close file\n");
+            exit(1);
+        } 
+        free(filepath);
         pthread_cond_signal(&queueFullCond);
         pthread_mutex_unlock(&queueLock);
         free(fn);
     }
-    return NULL;
+    // return NULL;
+}
+
+int isDirectory(const char *path) {
+   struct stat statbuf;
+   if (stat(path, &statbuf) != 0)
+       return 0;
+   return S_ISDIR(statbuf.st_mode);
 }

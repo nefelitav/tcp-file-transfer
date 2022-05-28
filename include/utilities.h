@@ -38,7 +38,7 @@ void createFileQueue(unsigned int maxSize);
 void deleteFileQueue();
 bool isEmpty();
 bool isFull();
-bool push(char* newfile, char* fileDir);
+bool push(char* newfile, char* fileDir, int socket);
 fileNode *pop();
 void printQueue();
 
