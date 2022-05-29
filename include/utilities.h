@@ -1,10 +1,10 @@
 #ifndef UTILITIES
 #define UTILITIES
 
-#include <stdio.h> 
-#include <stdlib.h> 
-#include <string.h> 
-#include <fcntl.h> 
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <fcntl.h>
 #include <unistd.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
@@ -12,22 +12,25 @@
 #include <stdbool.h>
 
 void child_server(int newsock);
-void sigchld_handler (int sig);
+void sigchld_handler(int sig);
 void perror_exit(char *message);
-
 
 typedef struct fileNode fileNode;
 
-struct fileNode {
-    char* file;
-    char* directory;
+struct fileNode
+{
+    char *file;
+    char *directory;
     int socket;
+    struct sockaddr *address;
+    socklen_t address_len;
     fileNode *next;
 };
 
 typedef struct fileQueue fileQueue;
 
-struct fileQueue {
+struct fileQueue
+{
     fileNode *first;
     fileNode *last;
     unsigned int currSize;
@@ -38,11 +41,10 @@ void createFileQueue(unsigned int maxSize);
 void deleteFileQueue();
 bool isEmpty();
 bool isFull();
-bool push(char* newfile, char* fileDir, int socket);
+bool push(char *newfile, char *fileDir, int socket, struct sockaddr *address, socklen_t address_len);
 fileNode *pop();
 void printQueue();
 
-extern fileQueue* queue;
-
+extern fileQueue *queue;
 
 #endif

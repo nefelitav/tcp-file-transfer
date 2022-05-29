@@ -1,42 +1,48 @@
-#include <stdio.h> 
-#include <stdlib.h> 
-#include <string.h> 
-#include <fcntl.h> 
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <fcntl.h>
 #include <unistd.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
 #include <signal.h>
+#include <netdb.h>
 #include "../include/utilities.h"
 #include "../include/server.h"
 
-fileQueue* queue;
+fileQueue *queue;
 
-void perror_exit(char *message) {
+void perror_exit(char *message)
+{
     perror(message);
     exit(EXIT_FAILURE);
 }
 
-void child_server(int newsock) {
+void child_server(int newsock)
+{
     char buf[1];
-    while(read(newsock, buf, 1) > 0) {  
-    	putchar(buf[0]);           
-    	if (write(newsock, buf, 1) < 0)
-    	    perror_exit("write");
+    while (read(newsock, buf, 1) > 0)
+    {
+        putchar(buf[0]);
+        if (write(newsock, buf, 1) < 0)
+            perror_exit("write");
     }
     printf("Closing connection.\n");
-    close(newsock);	 
+    close(newsock);
 }
 
-void sigchld_handler (int sig) {
-	while (waitpid(-1, NULL, WNOHANG) > 0);
+void sigchld_handler(int sig)
+{
+    while (waitpid(-1, NULL, WNOHANG) > 0)
+        ;
 }
-
 
 //////////////////////////////////
-// FileQueue    
+// FileQueue
 /////////////////////////////////
 
-void createFileQueue(unsigned int maxSize) {
+void createFileQueue(unsigned int maxSize)
+{
     queue = malloc(sizeof(fileQueue));
     queue->first = NULL;
     queue->last = NULL;
@@ -44,35 +50,46 @@ void createFileQueue(unsigned int maxSize) {
     queue->maxSize = maxSize;
 }
 
-bool isEmpty() {
+bool isEmpty()
+{
     return (queue->currSize == 0);
 }
 
-bool isFull() {
+bool isFull()
+{
     return (queue->currSize == queue->maxSize);
 }
 
-bool push(char* newfile, char* fileDir, int socket) {
-    if (isFull()) {
+bool push(char *newfile, char *fileDir, int socket, struct sockaddr *address, socklen_t address_len)
+{
+    if (isFull())
+    {
         return false;
     }
-    if (queue->last == NULL) {
+    if (queue->last == NULL)
+    {
         // empty queue
-        queue->last = (fileNode*)malloc(sizeof(fileNode));
+        queue->last = (fileNode *)malloc(sizeof(fileNode));
         queue->last->file = malloc(sizeof(char) * strlen(newfile) + 1);
         queue->last->directory = malloc(sizeof(char) * strlen(fileDir) + 1);
         strcpy(queue->last->file, newfile);
         strcpy(queue->last->directory, fileDir);
+        queue->last->address = address;
+        queue->last->address_len = address_len;
         queue->last->socket = socket;
         queue->last->next = NULL;
         queue->first = queue->last;
-    } else {
-        queue->last->next = (fileNode*)malloc(sizeof(fileNode));
+    }
+    else
+    {
+        queue->last->next = (fileNode *)malloc(sizeof(fileNode));
         queue->last = queue->last->next;
         queue->last->file = malloc(sizeof(char) * strlen(newfile) + 1);
         queue->last->directory = malloc(sizeof(char) * strlen(fileDir) + 1);
         strcpy(queue->last->file, newfile);
         strcpy(queue->last->directory, fileDir);
+        queue->last->address = address;
+        queue->last->address_len = address_len;
         queue->last->socket = socket;
         queue->last->next = NULL;
     }
@@ -80,12 +97,15 @@ bool push(char* newfile, char* fileDir, int socket) {
     return true;
 }
 
-fileNode *pop() {
-    if (queue->currSize == 0) {
+fileNode *pop()
+{
+    if (queue->currSize == 0)
+    {
         return NULL;
     }
     fileNode *toReturn = queue->first;
-    if (queue->first == queue->last) {
+    if (queue->first == queue->last)
+    {
         queue->last = NULL;
     }
     queue->first = queue->first->next;
@@ -93,24 +113,27 @@ fileNode *pop() {
     return toReturn;
 }
 
-void printQueue() {
+void printQueue()
+{
     fileNode *curr = queue->first;
     printf("\n############################################\n");
-    while (curr != NULL) {
+    while (curr != NULL)
+    {
         printf("file = %s/%s in socket %d\n", curr->directory, curr->file, curr->socket);
         curr = curr->next;
     }
     printf("############################################\n");
 }
 
-void deleteFileQueue() {
+void deleteFileQueue()
+{
     fileNode *curr = queue->first;
     fileNode *next;
-    while (curr != NULL) {
+    while (curr != NULL)
+    {
         next = curr->next;
         free(curr);
         curr = next;
     }
     free(queue);
 }
-
