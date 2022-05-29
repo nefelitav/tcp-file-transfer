@@ -282,10 +282,21 @@ void *worker_job(void *arg)
             // printf("Sending -%s- %d\n", block, nbytes);
             if (nbytes == 0)
             {
+                char *metadata = getMetadata(filepath);
+
                 if ((sendto(fn->socket, "EOF", 5, 0, fn->address, fn->address_len)) < 0)
                 {
                     perror_exit("sendto");
                 }
+                if ((sendto(fn->socket, metadata, strlen(metadata), 0, fn->address, fn->address_len)) < 0)
+                {
+                    perror_exit("sendto");
+                }
+                // if ((sendto(fn->socket, "EOF", 5, 0, fn->address, fn->address_len)) < 0)
+                // {
+                //     perror_exit("sendto");
+                // }
+                free(metadata);
                 break;
             }
             if ((sendto(fn->socket, block, block_size, 0, fn->address, fn->address_len)) < 0)
@@ -294,7 +305,7 @@ void *worker_job(void *arg)
             }
             memset(block, 0, block_size);
         }
-        // int stat(char *path, struct stat *buf);
+
         if (close(readFile) == -1)
         {
             perror("Failed to close file\n");
@@ -314,4 +325,109 @@ int isDirectory(const char *path)
     if (stat(path, &statbuf) != 0)
         return 0;
     return S_ISDIR(statbuf.st_mode);
+}
+
+char *getMetadata(char *filepath)
+{
+    struct stat statbuf;
+    if (stat(filepath, &statbuf) < 0)
+    {
+        perror("stat\n");
+    }
+
+    char *metadata = malloc(sizeof(char) * 1000);
+    memset(metadata, 0, 1000);
+
+    strcat(metadata, "access: ");
+    if (statbuf.st_mode & R_OK)
+    {
+        strcat(metadata, "read");
+    }
+    if (statbuf.st_mode & W_OK)
+    {
+        strcat(metadata, " write");
+    }
+    if (statbuf.st_mode & X_OK)
+    {
+        strcat(metadata, " execute");
+    }
+    strcat(metadata, "\n");
+
+    strcat(metadata, "size: ");
+    char st_size_str[20];
+    sprintf(st_size_str, "%ld", statbuf.st_size);
+    strcat(metadata, st_size_str);
+    strcat(metadata, "\n");
+
+    struct tm dt;
+    dt = *(gmtime(&statbuf.st_ctime));
+    strcat(metadata, "created on: ");
+    char tm_mday_str[20];
+    char tm_mon_str[20];
+    char tm_year_str[20];
+    char tm_hour_str[20];
+    char tm_min_str[20];
+    char tm_sec_str[20];
+    sprintf(tm_mday_str, "%d", dt.tm_mday);
+    sprintf(tm_mon_str, "%d", dt.tm_mon);
+    sprintf(tm_year_str, "%d", dt.tm_year + 1900);
+    sprintf(tm_hour_str, "%d", dt.tm_hour);
+    sprintf(tm_min_str, "%d", dt.tm_min);
+    sprintf(tm_sec_str, "%d", dt.tm_sec);
+    strcat(metadata, tm_mday_str);
+    strcat(metadata, "-");
+    strcat(metadata, tm_mon_str);
+    strcat(metadata, "-");
+    strcat(metadata, tm_year_str);
+    strcat(metadata, " ");
+    strcat(metadata, tm_hour_str);
+    strcat(metadata, ":");
+    strcat(metadata, tm_min_str);
+    strcat(metadata, ":");
+    strcat(metadata, tm_sec_str);
+    strcat(metadata, "\n");
+
+    dt = *(gmtime(&statbuf.st_mtime));
+    strcat(metadata, "modified on: ");
+    sprintf(tm_mday_str, "%d", dt.tm_mday);
+    sprintf(tm_mon_str, "%d", dt.tm_mon);
+    sprintf(tm_year_str, "%d", dt.tm_year + 1900);
+    sprintf(tm_hour_str, "%d", dt.tm_hour);
+    sprintf(tm_min_str, "%d", dt.tm_min);
+    sprintf(tm_sec_str, "%d", dt.tm_sec);
+    strcat(metadata, tm_mday_str);
+    strcat(metadata, "-");
+    strcat(metadata, tm_mon_str);
+    strcat(metadata, "-");
+    strcat(metadata, tm_year_str);
+    strcat(metadata, " ");
+    strcat(metadata, tm_hour_str);
+    strcat(metadata, ":");
+    strcat(metadata, tm_min_str);
+    strcat(metadata, ":");
+    strcat(metadata, tm_sec_str);
+    strcat(metadata, "\n");
+
+    dt = *(gmtime(&statbuf.st_atime));
+    strcat(metadata, "last accessed on: ");
+    sprintf(tm_mday_str, "%d", dt.tm_mday);
+    sprintf(tm_mon_str, "%d", dt.tm_mon);
+    sprintf(tm_year_str, "%d", dt.tm_year + 1900);
+    sprintf(tm_hour_str, "%d", dt.tm_hour);
+    sprintf(tm_min_str, "%d", dt.tm_min);
+    sprintf(tm_sec_str, "%d", dt.tm_sec);
+    strcat(metadata, tm_mday_str);
+    strcat(metadata, "-");
+    strcat(metadata, tm_mon_str);
+    strcat(metadata, "-");
+    strcat(metadata, tm_year_str);
+    strcat(metadata, " ");
+    strcat(metadata, tm_hour_str);
+    strcat(metadata, ":");
+    strcat(metadata, tm_min_str);
+    strcat(metadata, ":");
+    strcat(metadata, tm_sec_str);
+    strcat(metadata, "\n");
+
+    return metadata;
 }

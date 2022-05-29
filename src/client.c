@@ -105,10 +105,28 @@ int main(int argc, char **argv)
             perror_exit("recvfrom");
         }
         // printf("-----%d %s\n", n, block);
+        // if (strcmp(block, "END") == 0)
+        // {
+        //     break;
+        // }
+        // end of this file
         if (n == 0 || strcmp(block, "EOF") == 0)
         {
             // printf("%s\n", filecontent);
             write_file(directory, filename, filecontent);
+            i = 0;
+            memset(filename, 0, 256);
+            memset(filecontent, 0, strlen(filecontent));
+            memset(block, 0, 256);
+            char metadata[1000];
+            memset(metadata, 0, 1000);
+            if (((n = recvfrom(sock, metadata, sizeof(metadata), 0, serverptr, &serverlen)) < 0))
+            {
+                perror_exit("recvfrom");
+            }
+            printf("\nReceived file metadata:");
+            printf("\n%s\n", metadata);
+            memset(metadata, 0, 1000);
             break;
         }
         filecontent = (char *)realloc(filecontent, strlen(filecontent) + 256 + 1);
@@ -116,7 +134,6 @@ int main(int argc, char **argv)
         memset(block, 0, 256);
         i++;
     }
-
     free(filecontent);
     close(sock);
     free(directory);
@@ -173,7 +190,6 @@ void write_file(char *directory, char *filename, char *filecontent)
     }
     while (access(filepath, F_OK) == 0)
         ;
-    sleep(10);
     create_file(filepath, filecontent);
     free(filepath);
 }

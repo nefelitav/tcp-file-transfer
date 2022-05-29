@@ -21,10 +21,10 @@ utilities.o : ./src/utilities.c
 	$(CC) $(FLAGS) ./src/utilities.c
 
 valgrind_server : $(OUT1)
-	valgrind --leak-check=full --show-leak-kinds=all  --track-origins=yes ./dataServer -p 8010 -s 100 -q 100 -b 100
+	valgrind --leak-check=full --show-leak-kinds=all  --track-origins=yes ./dataServer -p 8012 -s 2 -q 2 -b 100
 
 valgrind_client : $(OUT2)
-	valgrind --leak-check=full --show-leak-kinds=all  --track-origins=yes ./remoteClient -i 172.24.201.206 -p 8010 -d /mnt/c/Users/ntavoula/Desktop/test
+	valgrind --leak-check=full --show-leak-kinds=all  --track-origins=yes ./remoteClient -i 172.24.201.206 -p 8012 -d /mnt/c/Users/ntavoula/Desktop/test
 
 clean :
 	rm -f $(OBJS1) $(OBJS2) $(OUT1) $(OUT2)
