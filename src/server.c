@@ -20,6 +20,8 @@
 
 pthread_t *worker_threads;
 pthread_mutex_t queueLock = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t socketLock = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t assignLock = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t queueFullCond = PTHREAD_COND_INITIALIZER;
 pthread_cond_t queueEmptyCond = PTHREAD_COND_INITIALIZER;
 
@@ -67,6 +69,8 @@ int main(int argc, char **argv)
     printf("Server was successfully initialized...\n");
 
     createFileQueue(queue_size);
+    createAssignmentQueue();
+    createMutexQueue();
     worker_threads = malloc(sizeof(pthread_t) * thread_pool_size);
 
     for (int i = 0; i < thread_pool_size; i++)
@@ -100,6 +104,9 @@ int main(int argc, char **argv)
         {
             perror_exit("accept");
         }
+        pthread_mutex_lock(&socketLock);
+        pushMutex(newsock);
+        pthread_mutex_unlock(&socketLock);
         printf("Accepted connection\n\n");
         pthread_t communication_thread;
         communication_thread_args *args = malloc(sizeof(communication_thread_args));
@@ -110,11 +117,13 @@ int main(int argc, char **argv)
         pthread_join(communication_thread, NULL);
         free(args);
     }
-    deleteFileQueue();
     for (int i = 0; i < thread_pool_size; i++)
     {
         pthread_join(worker_threads[i], NULL);
     }
+    deleteAssignmentQueue();
+    deleteFileQueue();
+    deleteMutexQueue();
     free(worker_threads);
     close(newsock);
 }
@@ -247,14 +256,21 @@ void *worker_job(void *arg)
         }
         // printf("Done Waiting\n");
         fn = pop();
-        printf("[Thread: %ld]: Received task: <%s/%s, %d>\n", pthread_self(), fn->directory, fn->file, fn->socket);
+        pthread_cond_signal(&queueFullCond);
+        pthread_mutex_unlock(&queueLock);
+
+        // start working on it
+        pthread_mutex_lock(&assignLock);
+        pushAssignment(fn->socket, pthread_self());
+        pthread_mutex_unlock(&assignLock);
+        printf("[Thread: %ld] : Received task: <%s/%s, %d>\n", pthread_self(), fn->directory, fn->file, fn->socket);
         // file content
         char *filepath = malloc(strlen(fn->directory) + strlen(fn->file) + 2);
         memset(filepath, 0, strlen(fn->directory) + strlen(fn->file) + 2);
         strcat(filepath, fn->directory);
         strcat(filepath, "/");
         strcat(filepath, fn->file);
-        printf("[Thread: %ld]: About to read file %s\n", pthread_self(), filepath);
+        printf("[Thread: %ld] : About to read file %s\n", pthread_self(), filepath);
         int readFile;
         if ((readFile = open(filepath, O_RDONLY, PERMS)) == -1)
         {
@@ -267,35 +283,58 @@ void *worker_job(void *arg)
         memset(block, 0, block_size);
         int nbytes;
 
+        lock(fn->socket);
         // send filename
         if ((sendto(fn->socket, fn->file, strlen(fn->file), 0, fn->address, fn->address_len)) < 0)
         {
             perror_exit("sendto");
         }
-
         while (1)
         {
             if (((nbytes = read(readFile, block, block_size)) < 0))
             {
                 perror_exit("read");
             }
-            // printf("Sending -%s- %d\n", block, nbytes);
+            printf("Sending -%s- %d\n", block, nbytes);
             if (nbytes == 0)
             {
-                char *metadata = getMetadata(filepath);
-
                 if ((sendto(fn->socket, "EOF", 5, 0, fn->address, fn->address_len)) < 0)
                 {
                     perror_exit("sendto");
                 }
-                if ((sendto(fn->socket, metadata, strlen(metadata), 0, fn->address, fn->address_len)) < 0)
-                {
-                    perror_exit("sendto");
-                }
-                // if ((sendto(fn->socket, "EOF", 5, 0, fn->address, fn->address_len)) < 0)
+                char *metadata = getMetadata(filepath);
+                // char metadataLength[strlen(metadata)];
+                // memset(metadataLength, 0, strlen(metadata));
+                // sprintf(metadataLength, "%ld", strlen(metadata));
+
+                // if ((sendto(fn->socket, metadataLength, 10, 0, fn->address, fn->address_len)) < 0)
                 // {
                 //     perror_exit("sendto");
                 // }
+                // memset(metadataLength, 0, strlen(metadata));
+                if ((sendto(fn->socket, metadata, 1000, 0, fn->address, fn->address_len)) < 0)
+                {
+                    perror_exit("sendto");
+                }
+                // finish working on it
+                pthread_mutex_lock(&assignLock);
+                popAssignment(fn->socket, pthread_self());
+                pthread_mutex_unlock(&assignLock);
+
+                if (isLast(fn->socket) && !stillServingClient(fn->socket))
+                {
+                    if ((sendto(fn->socket, "END", 5, 0, fn->address, fn->address_len)) < 0)
+                    {
+                        perror_exit("sendto");
+                    }
+                }
+                else
+                {
+                    if ((sendto(fn->socket, "CONT", 5, 0, fn->address, fn->address_len)) < 0)
+                    {
+                        perror_exit("sendto");
+                    }
+                }
                 free(metadata);
                 break;
             }
@@ -303,17 +342,19 @@ void *worker_job(void *arg)
             {
                 perror_exit("sendto");
             }
+            // printf("%s\n", block);
+
             memset(block, 0, block_size);
         }
+        unlock(fn->socket);
 
         if (close(readFile) == -1)
         {
             perror("Failed to close file\n");
             exit(1);
         }
+
         free(filepath);
-        pthread_cond_signal(&queueFullCond);
-        pthread_mutex_unlock(&queueLock);
         free(fn);
     }
     // return NULL;
@@ -369,7 +410,7 @@ char *getMetadata(char *filepath)
     char tm_min_str[20];
     char tm_sec_str[20];
     sprintf(tm_mday_str, "%d", dt.tm_mday);
-    sprintf(tm_mon_str, "%d", dt.tm_mon);
+    sprintf(tm_mon_str, "%d", dt.tm_mon + 1);
     sprintf(tm_year_str, "%d", dt.tm_year + 1900);
     sprintf(tm_hour_str, "%d", dt.tm_hour);
     sprintf(tm_min_str, "%d", dt.tm_min);
@@ -390,7 +431,7 @@ char *getMetadata(char *filepath)
     dt = *(gmtime(&statbuf.st_mtime));
     strcat(metadata, "modified on: ");
     sprintf(tm_mday_str, "%d", dt.tm_mday);
-    sprintf(tm_mon_str, "%d", dt.tm_mon);
+    sprintf(tm_mon_str, "%d", dt.tm_mon + 1);
     sprintf(tm_year_str, "%d", dt.tm_year + 1900);
     sprintf(tm_hour_str, "%d", dt.tm_hour);
     sprintf(tm_min_str, "%d", dt.tm_min);
@@ -411,7 +452,7 @@ char *getMetadata(char *filepath)
     dt = *(gmtime(&statbuf.st_atime));
     strcat(metadata, "last accessed on: ");
     sprintf(tm_mday_str, "%d", dt.tm_mday);
-    sprintf(tm_mon_str, "%d", dt.tm_mon);
+    sprintf(tm_mon_str, "%d", dt.tm_mon + 1);
     sprintf(tm_year_str, "%d", dt.tm_year + 1900);
     sprintf(tm_hour_str, "%d", dt.tm_hour);
     sprintf(tm_min_str, "%d", dt.tm_min);

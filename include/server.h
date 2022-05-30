@@ -26,6 +26,8 @@ typedef struct
 
 extern pthread_t *worker_threads;
 extern pthread_mutex_t queueLock;
+extern pthread_mutex_t assignLock;
+extern pthread_mutex_t socketLock;
 extern pthread_cond_t queueFullCond;
 extern pthread_cond_t queueEmptyCond;
 

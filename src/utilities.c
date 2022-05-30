@@ -5,12 +5,20 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
-#include <signal.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 #include <netdb.h>
+#include <sys/socket.h>
+#include <signal.h>
+#include <pthread.h>
+#include <dirent.h>
+#include <errno.h>
 #include "../include/utilities.h"
 #include "../include/server.h"
 
 fileQueue *queue;
+assignmentQueue *assignments;
+socketMutexQueue *socketMutexes;
 
 void perror_exit(char *message)
 {
@@ -58,6 +66,22 @@ bool isEmpty()
 bool isFull()
 {
     return (queue->currSize == queue->maxSize);
+}
+
+bool stillServingClient(int socket)
+{
+    fileNode *curr = queue->first;
+    fileNode *next;
+    while (curr != NULL)
+    {
+        next = curr->next;
+        if (curr->socket == socket)
+        {
+            return true;
+        }
+        curr = next;
+    }
+    return false;
 }
 
 bool push(char *newfile, char *fileDir, int socket, struct sockaddr *address, socklen_t address_len)
@@ -136,4 +160,135 @@ void deleteFileQueue()
         curr = next;
     }
     free(queue);
+}
+
+////////////////////////////////////////////
+
+void createAssignmentQueue()
+{
+    assignments = malloc(sizeof(assignmentQueue));
+    assignments->first = NULL;
+}
+void deleteAssignmentQueue()
+{
+    assignment *curr = assignments->first;
+    assignment *next;
+    while (curr != NULL)
+    {
+        next = curr->next;
+        free(curr);
+        curr = next;
+    }
+    free(assignments);
+}
+void pushAssignment(int socket, pthread_t thread)
+{
+    assignment *head = assignments->first;
+    assignment *newHead = (assignment *)malloc(sizeof(assignment));
+    newHead->thread = thread;
+    newHead->socket = socket;
+    newHead->next = head;
+    assignments->first = newHead;
+}
+
+void popAssignment(int socket, pthread_t thread)
+{
+    assignment *curr = assignments->first;
+    assignment *next;
+    assignment *prev = assignments->first;
+    while (curr != NULL)
+    {
+        next = curr->next;
+        if (curr->socket == socket && curr->thread == thread)
+        {
+            if (curr == assignments->first)
+            {
+                assignments->first = curr->next;
+            }
+            else
+            {
+                prev->next = next;
+            }
+            free(curr);
+            return;
+        }
+        prev = curr;
+        curr = next;
+    }
+}
+
+bool isLast(int socket)
+{
+    assignment *curr = assignments->first;
+    assignment *next;
+    while (curr != NULL)
+    {
+        next = curr->next;
+        if (curr->socket == socket)
+        {
+            return false;
+        }
+        curr = next;
+    }
+    return true;
+}
+
+/////////////////////////////////////
+
+void createMutexQueue()
+{
+    socketMutexes = malloc(sizeof(socketMutexQueue));
+    socketMutexes->first = NULL;
+}
+void deleteMutexQueue()
+{
+    socketMutex *curr = socketMutexes->first;
+    socketMutex *next;
+    while (curr != NULL)
+    {
+        next = curr->next;
+        free(curr);
+        curr = next;
+    }
+    free(socketMutexes);
+}
+void pushMutex(int socket)
+{
+    socketMutex *head = socketMutexes->first;
+    socketMutex *newHead = (socketMutex *)malloc(sizeof(socketMutex));
+    newHead->mutex = (pthread_mutex_t)PTHREAD_MUTEX_INITIALIZER;
+    newHead->socket = socket;
+    newHead->next = head;
+    socketMutexes->first = newHead;
+}
+
+void lock(int socket)
+{
+    socketMutex *curr = socketMutexes->first;
+    socketMutex *next;
+    while (curr != NULL)
+    {
+        next = curr->next;
+        if (curr->socket == socket)
+        {
+            pthread_mutex_lock(&(curr->mutex));
+            return;
+        }
+        curr = next;
+    }
+}
+void unlock(int socket)
+{
+    socketMutex *curr = socketMutexes->first;
+    socketMutex *next;
+    while (curr != NULL)
+    {
+        next = curr->next;
+        if (curr->socket == socket)
+        {
+            pthread_mutex_unlock(&(curr->mutex));
+            return;
+        }
+        curr = next;
+    }
 }
