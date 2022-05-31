@@ -98,16 +98,16 @@ int main(int argc, char **argv)
             {
                 perror_exit("recvfrom");
             }
-            printf("-----%d %s-----\n", n, blockSizeStr);
+            // printf("-----%d %s-----\n", n, blockSizeStr);
             blockSize = atoi(blockSizeStr);
             memset(filename, 0, 256);
             if (((n = recvfrom(sock, filename, sizeof(filename), 0, serverptr, &serverlen)) < 0))
             {
                 perror_exit("recvfrom");
             }
-            printf("-----%ld %s-----\n", sizeof(filename), filename);
-            block = malloc(sizeof(char) * blockSize);
-            memset(block, 0, blockSize);
+            // printf("-----%ld %s-----\n", sizeof(filename), filename);
+            block = malloc(sizeof(char) * blockSize + 1);
+            memset(block, 0, blockSize + 1);
             filecontent = malloc(sizeof(char) * blockSize + 1);
             memset(filecontent, 0, blockSize + 1);
             i = 1;
@@ -118,12 +118,12 @@ int main(int argc, char **argv)
         {
             perror_exit("recvfrom");
         }
-        printf("---^--%d -%s-\n", n, block);
+        // printf("---^--%d -%s-\n", n, block);
 
         // end of this file
         if (n == 0 || strcmp(block, "EOF") == 0)
         {
-            printf("!!!!!!!!!! %s %ld\n", filecontent, strlen(filecontent));
+            // printf("!!!!!!!!!! %s %ld\n", filecontent, strlen(filecontent));
             write_file(directory, filename, filecontent);
             memset(filename, 0, 256);
             free(filecontent);
@@ -145,13 +145,9 @@ int main(int argc, char **argv)
             }
             if (strcmp(finishLine, "END") == 0)
             {
-                printf("finishing\n");
                 break;
             }
-            else
-            {
-                printf("continuing\n");
-            }
+
             memset(finishLine, 0, 5);
             i = 0;
             continue;
@@ -164,16 +160,10 @@ int main(int argc, char **argv)
     free(server_ip);
 }
 
-void write_file(char *directory, char *filename, char *filecontent)
+void write_file(char *directory, char *filepath, char *filecontent)
 {
 
-    printf("Creating file %s in directory %s\n", filename, directory);
-
-    char *filepath = malloc(strlen(directory) + strlen(filename) + 2);
-    memset(filepath, 0, strlen(directory) + strlen(filename) + 2);
-    strcat(filepath, directory);
-    strcat(filepath, "/");
-    strcat(filepath, filename);
+    printf("Received : %s\n", filepath);
 
     pid_t pid;
     if (access(filepath, F_OK) == 0)
@@ -215,12 +205,11 @@ void write_file(char *directory, char *filename, char *filecontent)
     while (access(filepath, F_OK) == 0)
         ;
     create_file(filepath, filecontent);
-    free(filepath);
 }
 
 void create_file(char *filepath, char *filecontent)
 {
-    printf("Write to new file\n");
+    printf("Writing new file\n");
     int writeFile;
     if ((writeFile = open(filepath, O_CREAT | O_RDWR, PERMS)) == -1)
     {

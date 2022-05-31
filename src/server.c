@@ -221,11 +221,12 @@ void *read_directory(void *arg)
             }
             else
             {
-                if (isDirectory(line))
+                if (isDirectory(dir, line))
                 {
                     continue;
                 }
                 pthread_mutex_lock(&queueLock);
+                // printf("File = %s\n", line);
                 if (push(line, dir, args->socket, args->address, args->address_len) == false)
                 {
                     pthread_cond_wait(&queueFullCond, &queueLock);
@@ -299,20 +300,20 @@ void *worker_job(void *arg)
         memset(blockLength, 0, block_size);
 
         // send filename
-        if ((sendto(fn->socket, fn->file, 256, 0, fn->address, fn->address_len)) < 0)
+        if ((sendto(fn->socket, filepath, 256, 0, fn->address, fn->address_len)) < 0)
         {
             perror_exit("sendto");
         }
 
         while (1)
         {
-            printf("Reading %d bytes\n", block_size);
+            // printf("Reading %d bytes\n", block_size);
 
             if (((nbytes = read(readFile, block, block_size)) < 0))
             {
                 perror_exit("read");
             }
-            printf("Sending -%s- %d\n", block, nbytes);
+            // printf("Sending -%s- %d\n", block, nbytes);
 
             if (nbytes == 0)
             {
@@ -333,10 +334,7 @@ void *worker_job(void *arg)
                 int n;
                 if (((n = recvfrom(fn->socket, sentMessage, 4, MSG_PEEK, serverptr, &serverlen)) < 0))
                 {
-                    if (EAGAIN == errno || EWOULDBLOCK == errno)
-                    {
-                    }
-                    else
+                    if ((EAGAIN != errno) && (EWOULDBLOCK != errno))
                     {
                         perror_exit("recvfrom");
                     }
@@ -346,7 +344,7 @@ void *worker_job(void *arg)
                     ;
 
                 char *metadata = getMetadata(filepath);
-                printf("Sending metadata -%s- %ld\n", metadata, strlen(metadata));
+                // printf("Sending metadata -%s- %ld\n", metadata, strlen(metadata));
                 if ((sendto(fn->socket, metadata, 500, 0, fn->address, fn->address_len)) < 0)
                 {
                     perror_exit("sendto");
@@ -392,10 +390,19 @@ void *worker_job(void *arg)
     // return NULL;
 }
 
-int isDirectory(const char *path)
+int isDirectory(const char *dir, const char *path)
 {
+    if (strcmp(path, ".") == 0 || strcmp(path, "..") == 0)
+    {
+        return 1;
+    }
+    char *filepath = malloc(strlen(dir) + strlen(path) + 2);
+    memset(filepath, 0, strlen(dir) + strlen(path) + 2);
+    strcat(filepath, dir);
+    strcat(filepath, "/");
+    strcat(filepath, path);
     struct stat statbuf;
-    if (stat(path, &statbuf) != 0)
+    if (stat(filepath, &statbuf) != 0)
         return 0;
     return S_ISDIR(statbuf.st_mode);
 }

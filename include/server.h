@@ -14,7 +14,7 @@
 
 void *read_directory(void *arg);
 void *worker_job(void *arg);
-int isDirectory(const char *path);
+int isDirectory(const char *dir, const char *path);
 char *getMetadata(char *filepath);
 
 typedef struct
