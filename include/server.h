@@ -24,6 +24,7 @@ typedef struct
     socklen_t address_len;
 } communication_thread_args;
 
+extern pthread_mutex_t printLock;
 extern pthread_t *worker_threads;
 extern pthread_mutex_t queueLock;
 extern pthread_mutex_t assignLock;

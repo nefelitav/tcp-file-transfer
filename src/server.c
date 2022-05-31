@@ -22,6 +22,7 @@ pthread_t *worker_threads;
 pthread_mutex_t queueLock = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t socketLock = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t assignLock = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t printLock = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t queueFullCond = PTHREAD_COND_INITIALIZER;
 pthread_cond_t queueEmptyCond = PTHREAD_COND_INITIALIZER;
 struct sockaddr_in server;
@@ -233,7 +234,9 @@ void *read_directory(void *arg)
                 }
                 else
                 {
+                    pthread_mutex_lock(&printLock);
                     printf("[Thread: %ld] : Adding file %s to the queue...\n", pthread_self(), line);
+                    pthread_mutex_unlock(&printLock);
                     pthread_cond_signal(&queueEmptyCond);
                 }
                 pthread_mutex_unlock(&queueLock);
@@ -268,14 +271,18 @@ void *worker_job(void *arg)
         pthread_mutex_lock(&assignLock);
         pushAssignment(fn->socket, pthread_self());
         pthread_mutex_unlock(&assignLock);
+        pthread_mutex_lock(&printLock);
         printf("[Thread: %ld] : Received task: <%s/%s, %d>\n", pthread_self(), fn->directory, fn->file, fn->socket);
+        pthread_mutex_unlock(&printLock);
         // file content
         char *filepath = malloc(4096);
         memset(filepath, 0, 4096);
         strcat(filepath, fn->directory);
         strcat(filepath, "/");
         strcat(filepath, fn->file);
+        pthread_mutex_lock(&printLock);
         printf("[Thread: %ld] : About to read file %s\n", pthread_self(), filepath);
+        pthread_mutex_unlock(&printLock);
         int readFile;
         if ((readFile = open(filepath, O_RDONLY, PERMS)) == -1)
         {

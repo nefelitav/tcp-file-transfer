@@ -1,6 +1,6 @@
 # dataserver
 
-- valgrind
+- valgrind, helgrind, drd
 - globalexit
 - sigint
 - labs
