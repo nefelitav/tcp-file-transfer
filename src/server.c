@@ -134,8 +134,8 @@ int main(int argc, char **argv)
 
 void *read_directory(void *arg)
 {
-    char buff[256];
-    memset(buff, 0, 256);
+    char buff[4096];
+    memset(buff, 0, 4096);
     communication_thread_args *args = (communication_thread_args *)arg;
     int n;
     unsigned int addr_len = args->address_len;
@@ -189,21 +189,21 @@ void *read_directory(void *arg)
     else
     {
         close(p[1]);
-        char inbuf[256];
-        memset(inbuf, 0, 256);
+        char inbuf[4096];
+        memset(inbuf, 0, 4096);
         char *files = malloc(sizeof(char) * 1000 + 1);
         memset(files, 0, 1000 + 1);
         int nbytes;
         while (1)
         {
-            nbytes = read(p[0], inbuf, 256);
+            nbytes = read(p[0], inbuf, 4096);
             if (nbytes == 0)
             {
                 break;
             }
-            files = (char *)realloc(files, strlen(files) + 256 + 1);
-            strncat(files, inbuf, 256);
-            memset(inbuf, 0, 256);
+            files = (char *)realloc(files, strlen(files) + 4096 + 1);
+            strncat(files, inbuf, 4096);
+            memset(inbuf, 0, 4096);
         }
         // printf("%s\n", files);
         char *line, *temp;
@@ -270,8 +270,8 @@ void *worker_job(void *arg)
         pthread_mutex_unlock(&assignLock);
         printf("[Thread: %ld] : Received task: <%s/%s, %d>\n", pthread_self(), fn->directory, fn->file, fn->socket);
         // file content
-        char *filepath = malloc(strlen(fn->directory) + strlen(fn->file) + 2);
-        memset(filepath, 0, strlen(fn->directory) + strlen(fn->file) + 2);
+        char *filepath = malloc(4096);
+        memset(filepath, 0, 4096);
         strcat(filepath, fn->directory);
         strcat(filepath, "/");
         strcat(filepath, fn->file);
@@ -300,7 +300,7 @@ void *worker_job(void *arg)
         memset(blockLength, 0, block_size);
 
         // send filename
-        if ((sendto(fn->socket, filepath, 256, 0, fn->address, fn->address_len)) < 0)
+        if ((sendto(fn->socket, filepath, 4096, 0, fn->address, fn->address_len)) < 0)
         {
             perror_exit("sendto");
         }

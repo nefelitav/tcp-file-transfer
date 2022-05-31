@@ -83,7 +83,7 @@ int main(int argc, char **argv)
 
     char *filecontent;
     int n;
-    char filename[256];
+    char filename[4096];
     int blockSize = 0;
     int i = 0;
     char blockSizeStr[10];
@@ -100,7 +100,7 @@ int main(int argc, char **argv)
             }
             // printf("-----%d %s-----\n", n, blockSizeStr);
             blockSize = atoi(blockSizeStr);
-            memset(filename, 0, 256);
+            memset(filename, 0, 4096);
             if (((n = recvfrom(sock, filename, sizeof(filename), 0, serverptr, &serverlen)) < 0))
             {
                 perror_exit("recvfrom");
@@ -125,7 +125,7 @@ int main(int argc, char **argv)
         {
             // printf("!!!!!!!!!! %s %ld\n", filecontent, strlen(filecontent));
             write_file(directory, filename, filecontent);
-            memset(filename, 0, 256);
+            memset(filename, 0, 4096);
             free(filecontent);
             free(block);
             char metadata[500];
