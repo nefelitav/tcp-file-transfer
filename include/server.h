@@ -30,5 +30,8 @@ extern pthread_mutex_t assignLock;
 extern pthread_mutex_t socketLock;
 extern pthread_cond_t queueFullCond;
 extern pthread_cond_t queueEmptyCond;
+extern struct sockaddr_in server;
+extern struct sockaddr *serverptr;
+extern socklen_t serverlen;
 
 #endif

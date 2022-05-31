@@ -80,58 +80,63 @@ int main(int argc, char **argv)
         perror_exit("sendto");
     }
     unsigned int serverlen = sizeof(server);
-    char block[100];
-    memset(block, 0, 100);
-    char *filecontent = malloc(sizeof(char) * 1000 + 1);
-    memset(filecontent, 0, 1000 + 1);
+
+    char *filecontent;
     int n;
     char filename[256];
-    memset(filename, 0, 256);
-
+    int blockSize = 0;
     int i = 0;
+    char blockSizeStr[10];
+    char *block;
     while (1)
     {
+        // first time -> read block size and file name
         if (i == 0)
         {
+            memset(blockSizeStr, 0, 10);
+            if (((n = recvfrom(sock, blockSizeStr, 10, 0, serverptr, &serverlen)) < 0))
+            {
+                perror_exit("recvfrom");
+            }
+            printf("-----%d %s-----\n", n, blockSizeStr);
+            blockSize = atoi(blockSizeStr);
+            memset(filename, 0, 256);
             if (((n = recvfrom(sock, filename, sizeof(filename), 0, serverptr, &serverlen)) < 0))
             {
                 perror_exit("recvfrom");
             }
             printf("-----%ld %s-----\n", sizeof(filename), filename);
-            i++;
-            continue;
+            block = malloc(sizeof(char) * blockSize);
+            memset(block, 0, blockSize);
+            filecontent = malloc(sizeof(char) * blockSize + 1);
+            memset(filecontent, 0, blockSize + 1);
+            i = 1;
         }
-        if (((n = recvfrom(sock, block, sizeof(block), 0, serverptr, &serverlen)) < 0))
+        memset(block, 0, blockSize);
+        // read blocks
+        if (((n = recvfrom(sock, block, blockSize, 0, serverptr, &serverlen)) < 0))
         {
             perror_exit("recvfrom");
         }
-        // printf("-----%d %s\n", n, block);
+        printf("---^--%d -%s-\n", n, block);
 
         // end of this file
         if (n == 0 || strcmp(block, "EOF") == 0)
         {
-            // printf("%s\n", filecontent);
-            // write_file(directory, filename, filecontent);
-            i = 0;
+            printf("!!!!!!!!!! %s %ld\n", filecontent, strlen(filecontent));
+            write_file(directory, filename, filecontent);
             memset(filename, 0, 256);
-            memset(filecontent, 0, strlen(filecontent));
-            memset(block, 0, 100);
-            // char metadataLength[10];
-            // memset(metadataLength, 0, 10);
-            // if (((n = recvfrom(sock, metadataLength, 10, 0, serverptr, &serverlen)) < 0))
-            // {
-            //     perror_exit("recvfrom");
-            // }
-            char metadata[1000];
-            memset(metadata, 0, 1000);
-            if (((n = recvfrom(sock, metadata, 1000, 0, serverptr, &serverlen)) < 0))
+            free(filecontent);
+            free(block);
+            char metadata[500];
+            memset(metadata, 0, 500);
+            if (((n = recvfrom(sock, metadata, 500, 0, serverptr, &serverlen)) < 0))
             {
                 perror_exit("recvfrom");
             }
             printf("\nReceived file metadata:");
-            printf("\n-%s-\n", metadata);
-            memset(metadata, 0, 1000);
-            // memset(metadataLength, 0, 10);
+            printf("\n%d -%s-\n", n, metadata);
+            memset(metadata, 0, 500);
             char finishLine[5];
             memset(finishLine, 0, 5);
             if (((n = recvfrom(sock, finishLine, sizeof(finishLine), 0, serverptr, &serverlen)) < 0))
@@ -148,14 +153,12 @@ int main(int argc, char **argv)
                 printf("continuing\n");
             }
             memset(finishLine, 0, 5);
+            i = 0;
             continue;
         }
-        filecontent = (char *)realloc(filecontent, strlen(filecontent) + 256 + 1);
-        strncat(filecontent, block, 256);
-        memset(block, 0, 100);
-        i++;
+        strncat(filecontent, block, blockSize + 1);
+        filecontent = (char *)realloc(filecontent, strlen(filecontent) + blockSize + 1);
     }
-    free(filecontent);
     close(sock);
     free(directory);
     free(server_ip);

@@ -24,12 +24,14 @@ pthread_mutex_t socketLock = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t assignLock = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t queueFullCond = PTHREAD_COND_INITIALIZER;
 pthread_cond_t queueEmptyCond = PTHREAD_COND_INITIALIZER;
+struct sockaddr_in server;
+struct sockaddr *serverptr = (struct sockaddr *)&server;
+socklen_t serverlen = 0;
 
 int main(int argc, char **argv)
 {
     int port, sock, newsock, thread_pool_size, queue_size, block_size;
-    struct sockaddr_in server, client;
-    struct sockaddr *serverptr = (struct sockaddr *)&server;
+    struct sockaddr_in client;
     struct sockaddr *clientptr = (struct sockaddr *)&client;
     socklen_t clientlen = 0;
 
@@ -86,6 +88,8 @@ int main(int argc, char **argv)
     server.sin_family = AF_INET;
     server.sin_addr.s_addr = htonl(INADDR_ANY);
     server.sin_port = htons(port);
+
+    serverlen = sizeof(server);
 
     if (bind(sock, serverptr, sizeof(server)) < 0)
     {
@@ -279,48 +283,78 @@ void *worker_job(void *arg)
         }
         // printf("%s\n", filepath);
         int block_size = *(int *)arg;
-        char block[block_size];
-        memset(block, 0, block_size);
+        char block[block_size + 1];
+        memset(block, 0, block_size + 1);
         int nbytes;
-
         lock(fn->socket);
-        // send filename
-        if ((sendto(fn->socket, fn->file, strlen(fn->file), 0, fn->address, fn->address_len)) < 0)
+
+        // send block size
+        char blockLength[10];
+        memset(blockLength, 0, 10);
+        sprintf(blockLength, "%d", block_size);
+        if ((sendto(fn->socket, blockLength, 10, 0, fn->address, fn->address_len)) < 0)
         {
             perror_exit("sendto");
         }
+        memset(blockLength, 0, block_size);
+
+        // send filename
+        if ((sendto(fn->socket, fn->file, 256, 0, fn->address, fn->address_len)) < 0)
+        {
+            perror_exit("sendto");
+        }
+
         while (1)
         {
+            printf("Reading %d bytes\n", block_size);
+
             if (((nbytes = read(readFile, block, block_size)) < 0))
             {
                 perror_exit("read");
             }
             printf("Sending -%s- %d\n", block, nbytes);
+
             if (nbytes == 0)
             {
-                if ((sendto(fn->socket, "EOF", 5, 0, fn->address, fn->address_len)) < 0)
+                if ((sendto(fn->socket, "EOF", 4, 0, fn->address, fn->address_len)) < 0)
                 {
                     perror_exit("sendto");
                 }
-                char *metadata = getMetadata(filepath);
-                // char metadataLength[strlen(metadata)];
-                // memset(metadataLength, 0, strlen(metadata));
-                // sprintf(metadataLength, "%ld", strlen(metadata));
 
-                // if ((sendto(fn->socket, metadataLength, 10, 0, fn->address, fn->address_len)) < 0)
-                // {
-                //     perror_exit("sendto");
-                // }
-                // memset(metadataLength, 0, strlen(metadata));
-                if ((sendto(fn->socket, metadata, 1000, 0, fn->address, fn->address_len)) < 0)
+                struct timeval read_timeout;
+                read_timeout.tv_sec = 0;
+                read_timeout.tv_usec = 10;
+                if (setsockopt(fn->socket, SOL_SOCKET, SO_RCVTIMEO, &read_timeout, sizeof(read_timeout)) < 0)
+                {
+                    perror_exit("setsockopt");
+                }
+
+                char sentMessage[1000];
+                int n;
+                if (((n = recvfrom(fn->socket, sentMessage, 4, MSG_PEEK, serverptr, &serverlen)) < 0))
+                {
+                    if (EAGAIN == errno || EWOULDBLOCK == errno)
+                    {
+                    }
+                    else
+                    {
+                        perror_exit("recvfrom");
+                    }
+                }
+
+                while (strlen(sentMessage) > 0)
+                    ;
+
+                char *metadata = getMetadata(filepath);
+                printf("Sending metadata -%s- %ld\n", metadata, strlen(metadata));
+                if ((sendto(fn->socket, metadata, 500, 0, fn->address, fn->address_len)) < 0)
                 {
                     perror_exit("sendto");
                 }
+                free(metadata);
                 // finish working on it
                 pthread_mutex_lock(&assignLock);
                 popAssignment(fn->socket, pthread_self());
-                pthread_mutex_unlock(&assignLock);
-
                 if (isLast(fn->socket) && !stillServingClient(fn->socket))
                 {
                     if ((sendto(fn->socket, "END", 5, 0, fn->address, fn->address_len)) < 0)
@@ -335,16 +369,14 @@ void *worker_job(void *arg)
                         perror_exit("sendto");
                     }
                 }
-                free(metadata);
+                pthread_mutex_unlock(&assignLock);
                 break;
             }
             if ((sendto(fn->socket, block, block_size, 0, fn->address, fn->address_len)) < 0)
             {
                 perror_exit("sendto");
             }
-            // printf("%s\n", block);
-
-            memset(block, 0, block_size);
+            memset(block, 0, block_size + 1);
         }
         unlock(fn->socket);
 
@@ -376,8 +408,8 @@ char *getMetadata(char *filepath)
         perror("stat\n");
     }
 
-    char *metadata = malloc(sizeof(char) * 1000);
-    memset(metadata, 0, 1000);
+    char *metadata = malloc(sizeof(char) * 500);
+    memset(metadata, 0, 500);
 
     strcat(metadata, "access: ");
     if (statbuf.st_mode & R_OK)
