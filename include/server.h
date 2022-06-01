@@ -24,6 +24,8 @@ typedef struct
     socklen_t address_len;
 } communication_thread_args;
 
+void sigint_handler(int signum);
+extern bool globalExit;
 extern pthread_mutex_t printLock;
 extern pthread_t *worker_threads;
 extern pthread_mutex_t queueLock;
@@ -34,5 +36,6 @@ extern pthread_cond_t queueEmptyCond;
 extern struct sockaddr_in server;
 extern struct sockaddr *serverptr;
 extern socklen_t serverlen;
+extern int thread_num;
 
 #endif

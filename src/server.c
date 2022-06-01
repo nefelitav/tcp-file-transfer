@@ -18,6 +18,7 @@
 #include "../include/server.h"
 #define PERMS 0666
 
+bool globalExit = false;
 pthread_t *worker_threads;
 pthread_mutex_t queueLock = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t socketLock = PTHREAD_MUTEX_INITIALIZER;
@@ -28,6 +29,7 @@ pthread_cond_t queueEmptyCond = PTHREAD_COND_INITIALIZER;
 struct sockaddr_in server;
 struct sockaddr *serverptr = (struct sockaddr *)&server;
 socklen_t serverlen = 0;
+int thread_num;
 
 int main(int argc, char **argv)
 {
@@ -35,6 +37,11 @@ int main(int argc, char **argv)
     struct sockaddr_in client;
     struct sockaddr *clientptr = (struct sockaddr *)&client;
     socklen_t clientlen = 0;
+
+    if (signal(SIGINT, sigint_handler) < 0)
+    {
+        perror("SIGINT");
+    }
 
     if (argc < 5)
     {
@@ -78,8 +85,9 @@ int main(int argc, char **argv)
 
     for (int i = 0; i < thread_pool_size; i++)
     {
-        pthread_create(&worker_threads[i], NULL, &worker_job, (void *)&block_size);
+        pthread_create(&(worker_threads[i]), NULL, &worker_job, (void *)&block_size);
     }
+    thread_num = thread_pool_size;
 
     if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0)
     {
@@ -208,8 +216,7 @@ void *read_directory(void *arg)
         }
         // printf("%s\n", files);
         char *line, *temp;
-        char *dir;
-        dir = malloc(sizeof(char) * strlen(files) + 1);
+        char *dir = malloc(sizeof(char) * strlen(files) + 1);
         line = strtok_r(files, "\n", &temp);
         do
         {
@@ -243,6 +250,7 @@ void *read_directory(void *arg)
             }
         } while ((line = strtok_r(NULL, "\n", &temp)) != NULL);
         free(files);
+        free(dir);
     }
     return NULL;
 }
@@ -255,10 +263,12 @@ void *worker_job(void *arg)
         pthread_mutex_lock(&queueLock);
         while (isEmpty())
         {
-            // if (globalExit) {
-            //     pthread_mutex_unlock(&queueLock);
-            //     return NULL;
-            // }
+            if (globalExit)
+            {
+                printf("Dead\n");
+                pthread_mutex_unlock(&queueLock);
+                return NULL;
+            }
             // printf("Waiting\n");
             pthread_cond_wait(&queueEmptyCond, &queueLock);
         }
@@ -392,6 +402,8 @@ void *worker_job(void *arg)
         }
 
         free(filepath);
+        free(fn->directory);
+        free(fn->file);
         free(fn);
     }
     // return NULL;
@@ -411,6 +423,7 @@ int isDirectory(const char *dir, const char *path)
     struct stat statbuf;
     if (stat(filepath, &statbuf) != 0)
         return 0;
+    free(filepath);
     return S_ISDIR(statbuf.st_mode);
 }
 
@@ -517,4 +530,25 @@ char *getMetadata(char *filepath)
     strcat(metadata, "\n");
 
     return metadata;
+}
+
+void sigint_handler(int signum)
+{
+    pthread_mutex_lock(&queueLock);
+    printf("Dying\n");
+    globalExit = true;
+    pthread_cond_broadcast(&queueEmptyCond);
+    pthread_mutex_unlock(&queueLock);
+    for (int i = 0; i < thread_num; i++)
+    {
+        if (pthread_join(worker_threads[i], NULL) != 0)
+        {
+            perror("pthread_join");
+        }
+    }
+    deleteAssignmentQueue();
+    deleteFileQueue();
+    deleteMutexQueue();
+    free(worker_threads);
+    exit(0);
 }

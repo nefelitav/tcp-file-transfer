@@ -16,8 +16,11 @@
 #include "../include/utilities.h"
 #include "../include/server.h"
 
+// file queue
 fileQueue *queue;
+// thread-socket relationship
 assignmentQueue *assignments;
+// each mutex and its socket
 socketMutexQueue *socketMutexes;
 
 void perror_exit(char *message)
@@ -156,6 +159,8 @@ void deleteFileQueue()
     while (curr != NULL)
     {
         next = curr->next;
+        free(curr->file);
+        free(curr->directory);
         free(curr);
         curr = next;
     }
