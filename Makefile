@@ -21,16 +21,16 @@ utilities.o : ./src/utilities.c
 	$(CC) $(FLAGS) ./src/utilities.c
 
 valgrind_server : $(OUT1)
-	valgrind --leak-check=full --show-leak-kinds=all  --track-origins=yes ./dataServer -p 8012 -s 2 -q 2 -b 100
+	valgrind --leak-check=full --show-leak-kinds=all  --track-origins=yes ./dataServer -p 8021 -s 10 -q 1 -b 100
 
 valgrind_client : $(OUT2)
-	valgrind --leak-check=full --show-leak-kinds=all  --track-origins=yes ./remoteClient -i localhost -p 8012 -d /mnt/c/Users/ntavoula/Desktop/test
+	valgrind --leak-check=full --show-leak-kinds=all  --track-origins=yes ./remoteClient -i localhost -p 8021 -d /mnt/c/Users/ntavoula/Desktop/test
 
 helgrind: $(OUT1)
-	valgrind --tool=helgrind ./$(OUT1) -p 8012 -s 2 -q 2 -b 100
+	valgrind --tool=helgrind ./$(OUT1) -p 8021 -s 2 -q 2 -b 100
 
 drd: $(OUT1)
-	valgrind --tool=drd ./$(OUT1) -p 8012 -s 2 -q 2 -b 100
+	valgrind --tool=drd ./$(OUT1) -p 8021 -s 2 -q 2 -b 100
 
 clean :
 	rm -f $(OBJS1) $(OBJS2) $(OUT1) $(OUT2)

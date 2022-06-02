@@ -244,18 +244,15 @@ void *read_directory(void *arg)
                 }
                 pthread_mutex_lock(&queueLock);
                 // push file to queue
-                if (push(line, dir, args->socket, args->address, args->address_len) == false)
+                while (push(line, dir, args->socket, args->address, args->address_len) == false)
                 {
                     // wait if queue is full
                     pthread_cond_wait(&queueFullCond, &queueLock);
                 }
-                else
-                {
-                    pthread_mutex_lock(&printLock);
-                    printf("[Thread: %ld] : Adding file %s to the queue...\n", pthread_self(), line);
-                    pthread_mutex_unlock(&printLock);
-                    pthread_cond_signal(&queueEmptyCond);
-                }
+                pthread_mutex_lock(&printLock);
+                printf("[Thread: %ld] : Adding file %s to the queue...\n", pthread_self(), line);
+                pthread_mutex_unlock(&printLock);
+                pthread_cond_signal(&queueEmptyCond);
                 pthread_mutex_unlock(&queueLock);
             }
         } while ((line = strtok_r(NULL, "\n", &temp)) != NULL);
@@ -357,6 +354,7 @@ void *worker_job(void *arg)
                 {
                     perror_exit("setsockopt");
                 }
+                sleep(1);
 
                 // receive my own message so that ensure that the client doesnt receive EOF and metadata all at once
                 char sentMessage[1000];
@@ -385,7 +383,7 @@ void *worker_job(void *arg)
                 popAssignment(fn->socket, pthread_self());
 
                 // the client has been fully served
-                if (isLast(fn->socket) && !stillServingClient(fn->socket))
+                if (isLast(fn->socket) && !stillServingClient(fn->socket) && communicationAssignments == NULL)
                 {
                     if ((sendto(fn->socket, "END", 5, 0, fn->address, fn->address_len)) < 0)
                     {
@@ -422,7 +420,6 @@ void *worker_job(void *arg)
         free(fn->file);
         free(fn);
     }
-    // return NULL;
 }
 
 int isDirectory(const char *dir, const char *path)

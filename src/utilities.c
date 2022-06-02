@@ -20,6 +20,8 @@
 fileQueue *queue;
 // thread-socket relationship
 assignmentQueue *assignments;
+assignmentQueue *communicationAssignments;
+
 // each socket and its mutex
 socketMutexQueue *socketMutexes;
 
