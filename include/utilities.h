@@ -73,14 +73,6 @@ void pushAssignment(int socket, pthread_t thread);
 void popAssignment();
 bool isLast(int socket);
 
-extern assignmentQueue *communicationAssignments;
-
-void createCommunicationAssignmentQueue();
-void deleteCommunicationAssignmentQueue();
-void pushCommunicationAssignment(int socket, pthread_t thread);
-void popCommunicationAssignment(int socket, pthread_t thread);
-bool isLastCommunication(int socket);
-
 ////////////////////////////////
 
 typedef struct socketMutex socketMutex;

@@ -383,7 +383,7 @@ void *worker_job(void *arg)
                 popAssignment(fn->socket, pthread_self());
 
                 // the client has been fully served
-                if (isLast(fn->socket) && !stillServingClient(fn->socket) && communicationAssignments == NULL)
+                if (isLast(fn->socket) && !stillServingClient(fn->socket))
                 {
                     if ((sendto(fn->socket, "END", 5, 0, fn->address, fn->address_len)) < 0)
                     {
