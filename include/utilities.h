@@ -11,8 +11,6 @@
 #include <signal.h>
 #include <stdbool.h>
 
-void child_server(int newsock);
-void sigchld_handler(int sig);
 void perror_exit(char *message);
 
 typedef struct fileNode fileNode;
@@ -48,6 +46,8 @@ fileNode *pop();
 void printQueue();
 
 extern fileQueue *queue;
+
+////////////////////////////////
 
 typedef struct assignment assignment;
 

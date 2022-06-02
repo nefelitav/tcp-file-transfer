@@ -20,32 +20,13 @@
 fileQueue *queue;
 // thread-socket relationship
 assignmentQueue *assignments;
-// each mutex and its socket
+// each socket and its mutex
 socketMutexQueue *socketMutexes;
 
 void perror_exit(char *message)
 {
     perror(message);
     exit(EXIT_FAILURE);
-}
-
-void child_server(int newsock)
-{
-    char buf[1];
-    while (read(newsock, buf, 1) > 0)
-    {
-        putchar(buf[0]);
-        if (write(newsock, buf, 1) < 0)
-            perror_exit("write");
-    }
-    printf("Closing connection.\n");
-    close(newsock);
-}
-
-void sigchld_handler(int sig)
-{
-    while (waitpid(-1, NULL, WNOHANG) > 0)
-        ;
 }
 
 //////////////////////////////////
@@ -78,6 +59,7 @@ bool stillServingClient(int socket)
     while (curr != NULL)
     {
         next = curr->next;
+        // still in list
         if (curr->socket == socket)
         {
             return true;
@@ -167,7 +149,9 @@ void deleteFileQueue()
     free(queue);
 }
 
-////////////////////////////////////////////
+//////////////////////////////////
+// AssignmentQueue
+/////////////////////////////////
 
 void createAssignmentQueue()
 {
@@ -196,6 +180,7 @@ void pushAssignment(int socket, pthread_t thread)
     assignments->first = newHead;
 }
 
+// worker thread done with this client
 void popAssignment(int socket, pthread_t thread)
 {
     assignment *curr = assignments->first;
@@ -222,6 +207,7 @@ void popAssignment(int socket, pthread_t thread)
     }
 }
 
+// last worker thread that handles this client
 bool isLast(int socket)
 {
     assignment *curr = assignments->first;
@@ -238,7 +224,9 @@ bool isLast(int socket)
     return true;
 }
 
-/////////////////////////////////////
+//////////////////////////////////
+// MutexQueue
+/////////////////////////////////
 
 void createMutexQueue()
 {

@@ -18,11 +18,11 @@ int main(int argc, char **argv)
     int server_port, sock;
     char *directory;
     char *server_ip;
-
     struct sockaddr_in server;
     struct sockaddr *serverptr = (struct sockaddr *)&server;
     struct hostent *rem;
 
+    // get arguments
     if (argc < 4)
     {
         printf("Please give server ip, server port and directory\n");
@@ -53,6 +53,7 @@ int main(int argc, char **argv)
     printf("port: %d\n", server_port);
     printf("directory: %s\n", directory);
 
+    // connect to socket
     if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0)
     {
         perror_exit("socket");
@@ -75,12 +76,13 @@ int main(int argc, char **argv)
 
     printf("Connecting to %s on port %d\n", server_ip, server_port);
 
+    // send directory of interest to server
     if (sendto(sock, directory, strlen(directory), 0, serverptr, sizeof(server)) < 0)
     {
         perror_exit("sendto");
     }
-    unsigned int serverlen = sizeof(server);
 
+    unsigned int serverlen = sizeof(server);
     char *filecontent;
     int n;
     char filename[4096];
@@ -88,24 +90,25 @@ int main(int argc, char **argv)
     int i = 0;
     char blockSizeStr[10];
     char *block;
+
     while (1)
     {
-        // first time -> read block size and file name
+        // first message from server
         if (i == 0)
         {
             memset(blockSizeStr, 0, 10);
+            // read block size
             if (((n = recvfrom(sock, blockSizeStr, 10, 0, serverptr, &serverlen)) < 0))
             {
                 perror_exit("recvfrom");
             }
-            // printf("-----%d %s-----\n", n, blockSizeStr);
             blockSize = atoi(blockSizeStr);
             memset(filename, 0, 4096);
+            // read file name
             if (((n = recvfrom(sock, filename, sizeof(filename), 0, serverptr, &serverlen)) < 0))
             {
                 perror_exit("recvfrom");
             }
-            // printf("-----%ld %s-----\n", sizeof(filename), filename);
             block = malloc(sizeof(char) * blockSize + 1);
             memset(block, 0, blockSize + 1);
             filecontent = malloc(sizeof(char) * blockSize + 1);
@@ -113,21 +116,23 @@ int main(int argc, char **argv)
             i = 1;
         }
         memset(block, 0, blockSize);
-        // read blocks
+
+        // read blocks of file content
         if (((n = recvfrom(sock, block, blockSize, 0, serverptr, &serverlen)) < 0))
         {
             perror_exit("recvfrom");
         }
-        // printf("---^--%d -%s-\n", n, block);
 
         // end of this file
         if (n == 0 || strcmp(block, "EOF") == 0)
         {
-            // printf("!!!!!!!!!! %s %ld\n", filecontent, strlen(filecontent));
+            // create file in client's filesystem
             write_file(directory, filename, filecontent);
             memset(filename, 0, 4096);
             free(filecontent);
             free(block);
+
+            // read metadata
             char metadata[500];
             memset(metadata, 0, 500);
             if (((n = recvfrom(sock, metadata, 500, 0, serverptr, &serverlen)) < 0))
@@ -137,6 +142,8 @@ int main(int argc, char **argv)
             printf("\nReceived file metadata:");
             printf("\n%d -%s-\n", n, metadata);
             memset(metadata, 0, 500);
+
+            // read finishing/continuing message
             char finishLine[5];
             memset(finishLine, 0, 5);
             if (((n = recvfrom(sock, finishLine, sizeof(finishLine), 0, serverptr, &serverlen)) < 0))
@@ -147,11 +154,12 @@ int main(int argc, char **argv)
             {
                 break;
             }
-
             memset(finishLine, 0, 5);
+            // expect to read a new file name next
             i = 0;
             continue;
         }
+        // accumulate file content
         strncat(filecontent, block, blockSize + 1);
         filecontent = (char *)realloc(filecontent, strlen(filecontent) + blockSize + 1);
     }
@@ -162,12 +170,11 @@ int main(int argc, char **argv)
 
 void write_file(char *directory, char *filepath, char *filecontent)
 {
-
     printf("Received : %s\n", filepath);
-
     pid_t pid;
     if (access(filepath, F_OK) == 0)
     {
+        // if file exists in my fs i delete it
         printf("File exists\n");
         if ((pid = fork()) == -1)
         {
@@ -194,7 +201,7 @@ void write_file(char *directory, char *filepath, char *filecontent)
         }
         if (pid == 0)
         {
-            // create folders
+            // create folders to clone master's fs
             if (execl("/bin/mkdir", "mkdir", "-p", directory, (char *)0) == -1)
             {
                 perror("Execl Failed\n");
@@ -202,6 +209,7 @@ void write_file(char *directory, char *filepath, char *filecontent)
             }
         }
     }
+    // wait until already existent file is deleted
     while (access(filepath, F_OK) == 0)
         ;
     create_file(filepath, filecontent);
@@ -209,6 +217,7 @@ void write_file(char *directory, char *filepath, char *filecontent)
 
 void create_file(char *filepath, char *filecontent)
 {
+    // clone server's file
     printf("Writing new file\n");
     int writeFile;
     if ((writeFile = open(filepath, O_CREAT | O_RDWR, PERMS)) == -1)

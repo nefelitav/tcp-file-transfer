@@ -25,9 +25,9 @@ typedef struct
 } communication_thread_args;
 
 void sigint_handler(int signum);
-extern bool globalExit;
-extern pthread_mutex_t printLock;
+extern bool exitStatus;
 extern pthread_t *worker_threads;
+extern pthread_mutex_t printLock;
 extern pthread_mutex_t queueLock;
 extern pthread_mutex_t assignLock;
 extern pthread_mutex_t socketLock;

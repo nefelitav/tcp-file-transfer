@@ -18,7 +18,7 @@
 #include "../include/server.h"
 #define PERMS 0666
 
-bool globalExit = false;
+bool exitStatus = false;
 pthread_t *worker_threads;
 pthread_mutex_t queueLock = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t socketLock = PTHREAD_MUTEX_INITIALIZER;
@@ -38,17 +38,18 @@ int main(int argc, char **argv)
     struct sockaddr *clientptr = (struct sockaddr *)&client;
     socklen_t clientlen = 0;
 
+    // stop when i receive ctrl + c
     if (signal(SIGINT, sigint_handler) < 0)
     {
         perror("SIGINT");
     }
 
+    // get arguments
     if (argc < 5)
     {
         printf("Please give port, thread pool size, queue size and block size\n");
         exit(1);
     }
-
     for (int i = 0; i < argc; i++)
     {
         if (strcmp(argv[i], "-p") == 0)
@@ -78,6 +79,7 @@ int main(int argc, char **argv)
     printf("block_size: %d\n", block_size);
     printf("Server was successfully initialized...\n");
 
+    // initiliaze some structs
     createFileQueue(queue_size);
     createAssignmentQueue();
     createMutexQueue();
@@ -110,6 +112,7 @@ int main(int argc, char **argv)
         perror_exit("listen");
     }
 
+    // accepting connections
     printf("Listening for connections on port %d\n", port);
     while (1)
     {
@@ -122,6 +125,7 @@ int main(int argc, char **argv)
         pthread_mutex_unlock(&socketLock);
         printf("Accepted connection\n\n");
         pthread_t communication_thread;
+        // store args in a struct to send them to the thread function
         communication_thread_args *args = malloc(sizeof(communication_thread_args));
         args->socket = newsock;
         args->address = clientptr;
@@ -141,6 +145,7 @@ int main(int argc, char **argv)
     close(newsock);
 }
 
+// communication thread function
 void *read_directory(void *arg)
 {
     char buff[4096];
@@ -148,12 +153,15 @@ void *read_directory(void *arg)
     communication_thread_args *args = (communication_thread_args *)arg;
     int n;
     unsigned int addr_len = args->address_len;
+
+    // receive requested directory from client
     if ((n = recvfrom(args->socket, buff, sizeof(buff), 0, args->address, &addr_len) < 0))
     {
         perror_exit("recvfrom");
     }
     printf("[Thread: %ld] : About to scan directory %s\n", pthread_self(), buff);
 
+    // check if it exists
     DIR *dir = opendir(buff);
     if (dir)
     {
@@ -162,7 +170,6 @@ void *read_directory(void *arg)
     else if (ENOENT == errno)
     {
         printf("Directory does not exist\n");
-        // TODO free resources
         exit(1);
     }
     else
@@ -189,6 +196,7 @@ void *read_directory(void *arg)
         // set pipe to stdout
         dup2(p[1], 1);
         close(p[1]);
+        // -R -> all files recursively, -a -> hidden files also
         if (execl("/bin/ls", "ls", "-Ra", buff, (char *)0) == -1)
         {
             perror("Execl Failed\n");
@@ -197,12 +205,14 @@ void *read_directory(void *arg)
     }
     else
     {
+        // get output of ls
         close(p[1]);
         char inbuf[4096];
         memset(inbuf, 0, 4096);
         char *files = malloc(sizeof(char) * 1000 + 1);
         memset(files, 0, 1000 + 1);
         int nbytes;
+
         while (1)
         {
             nbytes = read(p[0], inbuf, 4096);
@@ -214,18 +224,17 @@ void *read_directory(void *arg)
             strncat(files, inbuf, 4096);
             memset(inbuf, 0, 4096);
         }
-        // printf("%s\n", files);
+
+        // clean output of ls
         char *line, *temp;
         char *dir = malloc(sizeof(char) * strlen(files) + 1);
         line = strtok_r(files, "\n", &temp);
         do
         {
-            // printf("current line = %s\n", line);
             if (strchr(line, ':') != NULL)
             {
                 line[strlen(line) - 1] = '\0';
                 strcpy(dir, line);
-                // printf("Directory = %s\n", dir);
             }
             else
             {
@@ -234,9 +243,10 @@ void *read_directory(void *arg)
                     continue;
                 }
                 pthread_mutex_lock(&queueLock);
-                // printf("File = %s\n", line);
+                // push file to queue
                 if (push(line, dir, args->socket, args->address, args->address_len) == false)
                 {
+                    // wait if queue is full
                     pthread_cond_wait(&queueFullCond, &queueLock);
                 }
                 else
@@ -263,7 +273,7 @@ void *worker_job(void *arg)
         pthread_mutex_lock(&queueLock);
         while (isEmpty())
         {
-            if (globalExit)
+            if (exitStatus)
             {
                 printf("Dead\n");
                 pthread_mutex_unlock(&queueLock);
@@ -324,21 +334,22 @@ void *worker_job(void *arg)
 
         while (1)
         {
-            // printf("Reading %d bytes\n", block_size);
-
+            // read from file
             if (((nbytes = read(readFile, block, block_size)) < 0))
             {
                 perror_exit("read");
             }
-            // printf("Sending -%s- %d\n", block, nbytes);
 
+            // have reached end of file
             if (nbytes == 0)
             {
+                // inform client that we have reached end of file
                 if ((sendto(fn->socket, "EOF", 4, 0, fn->address, fn->address_len)) < 0)
                 {
                     perror_exit("sendto");
                 }
 
+                // wait for a little
                 struct timeval read_timeout;
                 read_timeout.tv_sec = 0;
                 read_timeout.tv_usec = 10;
@@ -347,6 +358,7 @@ void *worker_job(void *arg)
                     perror_exit("setsockopt");
                 }
 
+                // receive my own message so that ensure that the client doesnt receive EOF and metadata all at once
                 char sentMessage[1000];
                 int n;
                 if (((n = recvfrom(fn->socket, sentMessage, 4, MSG_PEEK, serverptr, &serverlen)) < 0))
@@ -356,20 +368,23 @@ void *worker_job(void *arg)
                         perror_exit("recvfrom");
                     }
                 }
-
+                // wait until it's received
                 while (strlen(sentMessage) > 0)
                     ;
 
+                // send metadata
                 char *metadata = getMetadata(filepath);
-                // printf("Sending metadata -%s- %ld\n", metadata, strlen(metadata));
                 if ((sendto(fn->socket, metadata, 500, 0, fn->address, fn->address_len)) < 0)
                 {
                     perror_exit("sendto");
                 }
                 free(metadata);
+
                 // finish working on it
                 pthread_mutex_lock(&assignLock);
                 popAssignment(fn->socket, pthread_self());
+
+                // the client has been fully served
                 if (isLast(fn->socket) && !stillServingClient(fn->socket))
                 {
                     if ((sendto(fn->socket, "END", 5, 0, fn->address, fn->address_len)) < 0)
@@ -387,6 +402,7 @@ void *worker_job(void *arg)
                 pthread_mutex_unlock(&assignLock);
                 break;
             }
+            // send block to client
             if ((sendto(fn->socket, block, block_size, 0, fn->address, fn->address_len)) < 0)
             {
                 perror_exit("sendto");
@@ -528,7 +544,6 @@ char *getMetadata(char *filepath)
     strcat(metadata, ":");
     strcat(metadata, tm_sec_str);
     strcat(metadata, "\n");
-
     return metadata;
 }
 
@@ -536,7 +551,7 @@ void sigint_handler(int signum)
 {
     pthread_mutex_lock(&queueLock);
     printf("Dying\n");
-    globalExit = true;
+    exitStatus = true;
     pthread_cond_broadcast(&queueEmptyCond);
     pthread_mutex_unlock(&queueLock);
     for (int i = 0; i < thread_num; i++)
