@@ -1,0 +1,23 @@
+name: C CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: clean
+        run: make clean
+      - name: compile dataServer
+        run: make dataServer
+      - name: compile remoteClient
+        run: make remoteClient
+      - name: valgrind check dataServer
+        run: make valgrind_server
+      - name: valgrind check remoteClient
+        run: make valgrind_client
+      - name: data race detection
+        run: make helgrind
