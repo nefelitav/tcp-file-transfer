@@ -15,5 +15,3 @@ jobs:
         run: make dataServer
       - name: compile remoteClient
         run: make remoteClient
-      - name: data race detection
-        run: make helgrind
